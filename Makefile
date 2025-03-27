@@ -1,5 +1,5 @@
-# gvm use 1.21
-GO_VERSION_REQUIRED = 1.21
+# gvm use 1.22
+GO_VERSION_REQUIRED = 1.22
 
 # VERSION is the version we should download and use.
 VERSION:=$(shell git rev-parse --short HEAD)
