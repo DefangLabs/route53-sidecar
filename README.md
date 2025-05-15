@@ -1,5 +1,7 @@
 ![Docker Image Size (tag)](https://img.shields.io/docker/image-size/defangio/route53-sidecar/latest)
 
+[![Build and Push to Dockerhub](https://github.com/DefangLabs/route53-sidecar/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/DefangLabs/route53-sidecar/actions/workflows/build-and-push.yml)
+
 # route53-sidecar
 Sidecar that adds a route53 record on container start, removes it on SIGHUP shutdown.
 
