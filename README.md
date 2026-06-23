@@ -17,7 +17,7 @@ If you want to just add a record and exit, you can use the `-register` flag. Thi
 And to just remove the record, you can use the `-unregister` flag, this will remove the record and exit immediately.
 
 Environment variables:
-* `IPADDRESS` The ip address, or set as `public-ipv4` (default) to get it from instance metadata, `ecs` to get it from ECS container metadata
+* `IPADDRESS` The ip address, or set as `public-ipv4` (default) to get it from instance metadata, `ecs`/`private-ecs` to get a private IP from ECS container metadata, `public-ecs` to map ECS private IPs to public IPs via `DescribeNetworkInterfaces`
 * `DNS` The fully qualified DNS name to set
 * `DNSTTL` The TTL time for the DNS A record entry (default 10 seconds)
 * `HOSTEDZONE` The AWS Route53 Hosted Zone ID
@@ -53,5 +53,12 @@ Policies required for AWS ECS Role:
     - Effect: Allow
       Action:
         - route53:GetChange
+      Resource: "*"
+- PolicyName: ec2network
+  PolicyDocument:
+    Statement:
+    - Effect: Allow
+      Action:
+        - ec2:DescribeNetworkInterfaces
       Resource: "*"
 ```
