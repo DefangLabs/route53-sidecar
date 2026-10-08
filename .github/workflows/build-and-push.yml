@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: read
       id-token: write
@@ -82,6 +83,7 @@ jobs:
   manifest:
     needs: build
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: read
       id-token: write
