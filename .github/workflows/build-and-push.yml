@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -48,16 +51,40 @@ jobs:
           username: ${{ secrets.DOCKER_USER }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Configure AWS Credentials for CI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::488659951590:role/ci-role-d4fe904 # ciRoleArn from defang-io/infrastructure stack
+
+      - name: Configure AWS Credentials for Staging
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-east-1
+          role-to-assume: arn:aws:iam::426819183542:role/admin # adminUserRoleArn from defang-io/bootstrap stack
+          role-duration-seconds: 1200
+          role-chaining: true
+
+      - name: Log in to Amazon ECR Public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
       - name: Build and push Docker image
         run: |
           IMAGE_NAME=${{ vars.DOCKER_REPO }}/route53-sidecar
+          ECR_PUBLIC_IMAGE_NAME=public.ecr.aws/defang-io/route53-sidecar
           IMAGE_TAG=${{ matrix.arch }}-${{ env.VERSION }}
-          docker build --platform linux/${{ matrix.arch }} -t route53-sidecar -t $IMAGE_NAME:$IMAGE_TAG .
+          docker build --platform linux/${{ matrix.arch }} -t route53-sidecar -t $IMAGE_NAME:$IMAGE_TAG -t $ECR_PUBLIC_IMAGE_NAME:$IMAGE_TAG .
           docker push $IMAGE_NAME:$IMAGE_TAG
+          docker push $ECR_PUBLIC_IMAGE_NAME:$IMAGE_TAG
 
   manifest:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -73,9 +100,29 @@ jobs:
           username: ${{ secrets.DOCKER_USER }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Configure AWS Credentials for CI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::488659951590:role/ci-role-d4fe904 # ciRoleArn from defang-io/infrastructure stack
+
+      - name: Configure AWS Credentials for Staging
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-east-1
+          role-to-assume: arn:aws:iam::426819183542:role/admin # adminUserRoleArn from defang-io/bootstrap stack
+          role-duration-seconds: 1200
+          role-chaining: true
+
+      - name: Log in to Amazon ECR Public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
       - name: Create and push Docker manifest
         run: |
           IMAGE_NAME=${{ vars.DOCKER_REPO }}/route53-sidecar
+          ECR_PUBLIC_IMAGE_NAME=public.ecr.aws/defang-io/route53-sidecar
           VERSION=${{ env.VERSION }}
           docker manifest create $IMAGE_NAME:$VERSION \
             --amend $IMAGE_NAME:amd64-$VERSION \
@@ -85,3 +132,12 @@ jobs:
             --amend $IMAGE_NAME:arm64-$VERSION
           docker manifest push --purge $IMAGE_NAME:$VERSION
           docker manifest push --purge $IMAGE_NAME:latest
+
+          docker manifest create $ECR_PUBLIC_IMAGE_NAME:$VERSION \
+            --amend $ECR_PUBLIC_IMAGE_NAME:amd64-$VERSION \
+            --amend $ECR_PUBLIC_IMAGE_NAME:arm64-$VERSION
+          docker manifest create $ECR_PUBLIC_IMAGE_NAME:latest \
+            --amend $ECR_PUBLIC_IMAGE_NAME:amd64-$VERSION \
+            --amend $ECR_PUBLIC_IMAGE_NAME:arm64-$VERSION
+          docker manifest push --purge $ECR_PUBLIC_IMAGE_NAME:$VERSION
+          docker manifest push --purge $ECR_PUBLIC_IMAGE_NAME:latest
