@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	"github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/namsral/flag"
@@ -67,15 +70,27 @@ func configureFromFlags(ctx context.Context) {
 			log.Fatalf("Failed to fetch IPV4 public IP: %v", err)
 		}
 		ipAddress = string(publicIpv4)
-	} else if ipAddress == "ecs" {
+	} else if ipAddress == "ecs" || ipAddress == "private-ecs" || ipAddress == "public-ecs" {
 		log.Printf("Fetching IP Address from ECS metadata")
 		metadata, err := getEcsMetadata()
 		if err != nil {
 			log.Fatalf("Failed to fetch ECS metadata: %v", err)
 		}
-		ipAddress = metadata.Networks[0].IPv4Addresses[0] // use the first IP address
 		if metadata.DesiredStatus == "STOPPED" {
 			log.Fatalf("ECS container is being stopped, exiting")
+		}
+
+		if ipAddress == "public-ecs" {
+			ec2Client := ec2.NewFromConfig(cfg)
+			ipAddress, err = getEcsPublicIP(ctx, ec2Client, metadata.privateIPv4Addresses())
+			if err != nil {
+				log.Fatalf("Failed to fetch ECS public IP: %v", err)
+			}
+		} else {
+			ipAddress, err = metadata.firstPrivateIPv4Address()
+			if err != nil {
+				log.Fatalf("Failed to fetch ECS private IP: %v", err)
+			}
 		}
 	}
 
@@ -224,6 +239,62 @@ type ecsMetadata struct {
 	Networks      []struct {
 		IPv4Addresses []string `json:"IPv4Addresses"`
 	} `json:"Networks"`
+}
+
+func (metadata *ecsMetadata) privateIPv4Addresses() []string {
+	var privateIPs []string
+	for _, network := range metadata.Networks {
+		privateIPs = append(privateIPs, network.IPv4Addresses...)
+	}
+	return privateIPs
+}
+
+func (metadata *ecsMetadata) firstPrivateIPv4Address() (string, error) {
+	privateIPs := metadata.privateIPv4Addresses()
+	if len(privateIPs) == 0 {
+		return "", errors.New("missing IPv4Addresses in ECS metadata")
+	}
+	return privateIPs[0], nil
+}
+
+type ec2NetworkInterfaceAPI interface {
+	DescribeNetworkInterfaces(ctx context.Context, params *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error)
+}
+
+func getEcsPublicIP(ctx context.Context, ec2Client ec2NetworkInterfaceAPI, privateIPs []string) (string, error) {
+	if len(privateIPs) == 0 {
+		return "", errors.New("missing private IPv4 addresses in ECS metadata")
+	}
+
+	describeOutput, err := ec2Client.DescribeNetworkInterfaces(ctx, &ec2.DescribeNetworkInterfacesInput{
+		Filters: []ec2types.Filter{
+			{
+				Name:   aws.String("addresses.private-ip-address"),
+				Values: privateIPs,
+			},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	publicByPrivate := map[string]string{}
+	for _, networkInterface := range describeOutput.NetworkInterfaces {
+		for _, privateAddress := range networkInterface.PrivateIpAddresses {
+			if privateAddress.PrivateIpAddress == nil || privateAddress.Association == nil || privateAddress.Association.PublicIp == nil {
+				continue
+			}
+			publicByPrivate[*privateAddress.PrivateIpAddress] = *privateAddress.Association.PublicIp
+		}
+	}
+
+	for _, privateIP := range privateIPs {
+		if publicIP, ok := publicByPrivate[privateIP]; ok {
+			return publicIP, nil
+		}
+	}
+
+	return "", errors.New("no public IP found for ECS private IPv4 addresses")
 }
 
 func getEcsMetadata() (*ecsMetadata, error) {
