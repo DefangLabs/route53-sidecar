@@ -3,13 +3,11 @@ GO_VERSION_REQUIRED = 1.22
 
 # VERSION is the version we should download and use.
 VERSION:=$(shell git rev-parse --short HEAD)
-# DOCKER is the docker image repo we need to push to.
-DOCKER_REPO:=defangio
-DOCKER_USER:=defangio
-DOCKER_IMAGE_NAME:=$(DOCKER_REPO)/route53-sidecar
+# ECR_PUBLIC_IMAGE_NAME is the public ECR repository we push to.
+ECR_PUBLIC_IMAGE_NAME:=public.ecr.aws/defang-io/route53-sidecar
 
-DOCKER_IMAGE_ARM64:=$(DOCKER_IMAGE_NAME):arm64-$(VERSION)
-DOCKER_IMAGE_AMD64:=$(DOCKER_IMAGE_NAME):amd64-$(VERSION)
+ECR_PUBLIC_IMAGE_ARM64:=$(ECR_PUBLIC_IMAGE_NAME):arm64-$(VERSION)
+ECR_PUBLIC_IMAGE_AMD64:=$(ECR_PUBLIC_IMAGE_NAME):amd64-$(VERSION)
 BUILD_FLAGS:=-ldflags "-s -w -X main.version=$(VERSION)" -trimpath
 
 .PHONY: check_go_version
@@ -42,32 +40,32 @@ build-arm64: ensure
 
 .PHONY: docker-amd64
 docker-amd64: build-amd64
-	docker build --platform linux/amd64 -t route53-sidecar -t $(DOCKER_IMAGE_AMD64) .
+	docker build --platform linux/amd64 -t route53-sidecar -t $(ECR_PUBLIC_IMAGE_AMD64) .
 
 .PHONY: docker-arm64
 docker-arm64: build-arm64
-	docker build --platform linux/arm64 -t route53-sidecar -t $(DOCKER_IMAGE_ARM64) .
+	docker build --platform linux/arm64 -t route53-sidecar -t $(ECR_PUBLIC_IMAGE_ARM64) .
 
 .PHONY: docker
 docker: docker-amd64 docker-arm64 ## Build all docker images and manifest
 
 .PHONY: push
-push: docker login ## Push all docker images
-	docker push $(DOCKER_IMAGE_AMD64)
-	docker push $(DOCKER_IMAGE_ARM64)
-	docker manifest create --amend $(DOCKER_IMAGE_NAME):$(VERSION) $(DOCKER_IMAGE_AMD64) $(DOCKER_IMAGE_ARM64)
-	docker manifest push --purge $(DOCKER_IMAGE_NAME):$(VERSION)
+push: docker ecr-public-login ## Push all docker images to public ECR
+	docker push $(ECR_PUBLIC_IMAGE_AMD64)
+	docker push $(ECR_PUBLIC_IMAGE_ARM64)
+	docker manifest create --amend $(ECR_PUBLIC_IMAGE_NAME):$(VERSION) $(ECR_PUBLIC_IMAGE_AMD64) $(ECR_PUBLIC_IMAGE_ARM64)
+	docker manifest push --purge $(ECR_PUBLIC_IMAGE_NAME):$(VERSION)
 
 .PHONY: push-latest
-push-latest: push ## Push all docker images
-	docker manifest create --amend $(DOCKER_IMAGE_NAME):latest $(DOCKER_IMAGE_AMD64) $(DOCKER_IMAGE_ARM64)
-	docker manifest push --purge $(DOCKER_IMAGE_NAME):latest
+push-latest: push ## Push all docker images to public ECR
+	docker manifest create --amend $(ECR_PUBLIC_IMAGE_NAME):latest $(ECR_PUBLIC_IMAGE_AMD64) $(ECR_PUBLIC_IMAGE_ARM64)
+	docker manifest push --purge $(ECR_PUBLIC_IMAGE_NAME):latest
 
 .PHONY: push-test
-push-test: push ## Push all docker images
-	docker manifest create --amend $(DOCKER_IMAGE_NAME):test $(DOCKER_IMAGE_AMD64) $(DOCKER_IMAGE_ARM64)
-	docker manifest push --purge $(DOCKER_IMAGE_NAME):test
+push-test: push ## Push all docker images to public ECR
+	docker manifest create --amend $(ECR_PUBLIC_IMAGE_NAME):test $(ECR_PUBLIC_IMAGE_AMD64) $(ECR_PUBLIC_IMAGE_ARM64)
+	docker manifest push --purge $(ECR_PUBLIC_IMAGE_NAME):test
 
-.PHONY: login
-login: ## Login to docker
-	@docker login -u $(DOCKER_USER)
+.PHONY: ecr-public-login
+ecr-public-login: ## Login to public ECR
+	@aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
