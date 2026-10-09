@@ -1,6 +1,4 @@
-![Docker Image Size (tag)](https://img.shields.io/docker/image-size/defangio/route53-sidecar/latest)
-
-[![Build and Push to Dockerhub](https://github.com/DefangLabs/route53-sidecar/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/DefangLabs/route53-sidecar/actions/workflows/build-and-push.yml)
+[![Build and Push to ECR](https://github.com/DefangLabs/route53-sidecar/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/DefangLabs/route53-sidecar/actions/workflows/build-and-push.yml)
 
 # route53-sidecar
 Sidecar that adds a route53 record on container start, removes it on SIGHUP shutdown.
@@ -30,7 +28,7 @@ make build
 
 Use the existing docker image locally:
 ```
-docker run -v ~/.aws:/root/.aws defangio/route53-sidecar -dns="test.example.com" -hostedzone=ABCDEFGHIJKLM4 -ipaddress=127.0.0.1
+docker run -v ~/.aws:/root/.aws public.ecr.aws/defang-io/route53-sidecar -dns="test.example.com" -hostedzone=ABCDEFGHIJKLM4 -ipaddress=127.0.0.1
 ```
 
 Build your own docker image:
